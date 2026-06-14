@@ -1,122 +1,280 @@
-<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta charset="utf-8"><title>Remote Browser — Viewer</title>
+<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
+<meta charset="utf-8"><title>Remote Browser — Viewer</title>
 <style>
-  html,body{margin:0;height:100%;font-family:system-ui,sans-serif;background:#0b0f17}
-  #top{background:#0f172a;color:#e5e7eb}
-  #bar{display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:13px;border-bottom:1px solid #1e293b}
-  #bar .dot{width:9px;height:9px;border-radius:50%;background:#9ca3af;flex:0 0 auto}
-  #bar .dot.live{background:#22c55e}
-  #url{color:#93c5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-  #reload,#hide{color:#fff;border:0;border-radius:6px;padding:5px 10px;font-weight:600;cursor:pointer;font-size:12px}
-  #reload{background:#0891b2}#hide{background:#7c3aed}
-  #reset{background:#dc2626;color:#fff;border:0;border-radius:6px;padding:5px 10px;font-weight:600;cursor:pointer;font-size:12px}
-  #nav{display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid #1e293b}
-  #newurl{flex:1;background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;border-radius:7px;padding:6px 9px;font-size:12px}
-  #open{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:0 12px;font-weight:600;cursor:pointer;font-size:12px}
-  #tabs{display:flex;gap:6px;padding:6px 12px;overflow-x:auto;border-bottom:1px solid #1e293b}
-  .tab{display:flex;align-items:center;gap:6px;padding:5px 8px 5px 10px;border-radius:7px;background:#1e293b;color:#cbd5e1;
-       font-size:12px;white-space:nowrap;cursor:pointer;border:1px solid transparent;max-width:240px}
-  .tab:hover{background:#334155}
-  .tab.active{background:#2563eb;color:#fff;border-color:#60a5fa}
-  .tab .lbl{overflow:hidden;text-overflow:ellipsis}
-  .tab .x{opacity:.6;font-weight:700;padding:0 2px;border-radius:4px}
-  .tab .x:hover{opacity:1;background:rgba(255,255,255,.2)}
-  #stage{position:relative;width:100%;height:calc(100vh - 180px);background:#fff}
-  iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
-  iframe.hidden{visibility:hidden;z-index:0} iframe.shown{visibility:visible;z-index:1}
-  #console{display:flex;gap:8px;padding:6px 12px;background:#0f172a;border-top:1px solid #1e293b;align-items:stretch}
-  #code{flex:1;height:54px;resize:vertical;background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;border-radius:7px;
-        padding:7px 9px;font:12px/1.45 ui-monospace,Menlo,monospace}
-  #run{background:#16a34a;color:#fff;border:0;border-radius:7px;padding:0 14px;font-weight:600;cursor:pointer;white-space:nowrap}
-  #out{padding:4px 12px 8px;color:#a7f3d0;font:11px/1.4 ui-monospace,monospace;background:#0f172a;
-       max-height:64px;overflow:auto;white-space:pre-wrap;border-top:1px solid #1e293b}
-</style></head><body>
-<div id="top">
-  <div id="bar"><span class="dot" id="dot"></span><span id="state">Connecting…</span><span id="url"></span>
-    <button id="reload" title="Reload all tabs on A">⟳ Reload all</button>
-    <button id="hide" title="Move A's window off-screen (invisible)">🙈 Hide A</button>
-    <button id="reset" title="Wipe Firebase session and start fresh">⟲ Reset</button></div>
-  <div id="nav"><input id="newurl" placeholder="Paste a URL to open as a new tab on A…" autocomplete="off">
-    <button id="open">Open on A</button></div>
-  <div id="tabs"></div>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:#0b0f17;font-family:system-ui,sans-serif;height:100%;overflow:hidden}
+
+/* ── SHELL ── */
+#shell{display:flex;flex-direction:column;height:100dvh;height:100vh}
+
+/* ── TOP CHROME ── */
+#top{background:#0f172a;color:#e5e7eb;flex-shrink:0;z-index:20}
+
+/* status bar */
+#bar{display:flex;align-items:center;gap:5px;padding:5px 8px;font-size:11px;border-bottom:1px solid #1e293b;flex-wrap:nowrap;overflow:hidden}
+#bar .dot{width:8px;height:8px;border-radius:50%;background:#9ca3af;flex:0 0 auto}
+#bar .dot.live{background:#22c55e}
+#state{font-size:11px;color:#94a3b8;white-space:nowrap;flex-shrink:0}
+#url{color:#93c5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:10px}
+
+/* action buttons row */
+#actions{display:flex;gap:4px;padding:4px 8px;border-bottom:1px solid #1e293b;flex-wrap:wrap}
+.top-btn{color:#fff;border:0;border-radius:6px;padding:0 9px;font-weight:600;cursor:pointer;
+         font-size:11px;white-space:nowrap;height:32px;touch-action:manipulation;flex-shrink:0}
+#reload{background:#0891b2}
+#hide{background:#7c3aed}
+#reset{background:#dc2626}
+#btn-desktop{background:#0f5132;border:2px solid transparent}
+#btn-desktop.on{background:#166534;border-color:#4ade80}
+#btn-panel{background:#374151}
+#btn-zoom-out{background:#374151;font-size:14px}
+#btn-zoom-in{background:#374151;font-size:14px}
+#zoom-label{font-size:10px;color:#94a3b8;align-self:center;min-width:30px;text-align:center}
+
+/* url nav */
+#nav{display:flex;gap:6px;padding:5px 8px;border-bottom:1px solid #1e293b}
+#newurl{flex:1;background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;border-radius:7px;
+        padding:6px 9px;font-size:16px;height:36px;-webkit-appearance:none;outline:none}
+#open{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:0 12px;
+      font-weight:600;cursor:pointer;font-size:12px;height:36px;touch-action:manipulation;flex-shrink:0}
+
+/* tabs row */
+#tabs{display:flex;gap:5px;padding:5px 8px;overflow-x:auto;overflow-y:hidden;
+      border-bottom:1px solid #1e293b;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#tabs::-webkit-scrollbar{display:none}
+.tab{display:flex;align-items:center;gap:5px;padding:5px 8px 5px 10px;border-radius:7px;
+     background:#1e293b;color:#cbd5e1;font-size:12px;white-space:nowrap;
+     cursor:pointer;border:1px solid transparent;height:32px;touch-action:manipulation;flex-shrink:0}
+.tab.active{background:#2563eb;color:#fff;border-color:#60a5fa}
+.tab .lbl{overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.tab .x{opacity:.6;font-weight:700;padding:1px 4px;border-radius:4px;font-size:13px;min-width:20px;text-align:center}
+.tab .x:hover{opacity:1;background:rgba(255,255,255,.2)}
+
+/* ── STAGE ── */
+#stage-wrap{flex:1;position:relative;overflow:hidden;background:#888;min-height:0}
+
+/* zoom container — scale transforms happen here */
+#stage-zoom{
+  width:100%;
+  height:100%;
+  transform-origin:top left;
+  /* overflow so scrollbar appears on the wrap, not here */
+}
+
+/* actual scrollable area */
+#stage{
+  width:100%;
+  height:100%;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  background:#fff;
+  position:relative;
+}
+
+/* desktop mode: iframe forced to 1024px wide so site renders as desktop */
+#stage.desktop-mode{min-width:1024px}
+
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;min-width:100%;min-height:100%}
+iframe.hidden{visibility:hidden;z-index:0}
+iframe.shown{visibility:visible;z-index:1}
+
+/* scroll hint overlay */
+#stage-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;
+            background:rgba(0,0,0,0.65);color:#fff;font-size:12px;font-weight:600;
+            padding:8px 14px;border-radius:20px;pointer-events:none;
+            text-align:center;line-height:1.6;white-space:nowrap;
+            opacity:1;transition:opacity 0.8s}
+#stage-hint.fade{opacity:0}
+
+/* ── BOTTOM PANEL ── */
+#bottom{flex-shrink:0;background:#0f172a;overflow:hidden;
+        border-top:2px solid #1e293b;transition:max-height 0.25s ease}
+#bottom.open{max-height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#bottom.closed{max-height:0}
+
+#console{display:flex;gap:8px;padding:8px 10px;align-items:stretch}
+#code{flex:1;height:56px;resize:vertical;background:#0b1220;color:#e2e8f0;
+      border:1px solid #1e293b;border-radius:7px;padding:6px 9px;
+      font:12px/1.45 ui-monospace,Menlo,monospace;-webkit-appearance:none}
+#run{background:#16a34a;color:#fff;border:0;border-radius:7px;padding:0 12px;
+     font-weight:600;cursor:pointer;white-space:nowrap;font-size:12px;
+     min-height:44px;touch-action:manipulation}
+
+#out{padding:4px 10px 6px;color:#a7f3d0;font:11px/1.4 ui-monospace,monospace;
+     max-height:56px;overflow:auto;white-space:pre-wrap;border-top:1px solid #1e293b}
+
+/* ── REMOTE SCRIPT SLOTS ── */
+#rs{padding:10px 10px 14px;border-top:1px solid #1e293b;color:#e5e7eb}
+#rs h3{margin:0 0 3px;font-size:11px;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase}
+#rs .hint{margin:0 0 9px;font-size:10px;color:#64748b;line-height:1.4}
+.rsg{display:flex;flex-direction:column;gap:8px}
+.rsl{background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.rsl-row{display:flex;gap:6px;align-items:center}
+.rsl-name{flex:0 0 33%;min-width:0;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5px;
+          padding:6px 7px;font-size:16px;height:34px;-webkit-appearance:none}
+.rsl-url{flex:1;min-width:0;background:#060c18;color:#7dd3fc;border:1px solid #1e293b;border-radius:5px;
+         padding:6px 7px;font:11px/1.4 ui-monospace,Menlo,monospace;height:34px;-webkit-appearance:none}
+.rsl-btns{display:flex;gap:6px}
+.rsl-run{flex:1;background:#0f766e;color:#fff;border:0;border-radius:5px;padding:8px 0;
+         font-size:12px;font-weight:700;cursor:pointer;min-height:38px;touch-action:manipulation}
+.rsl-run:active{background:#0d9488}
+.rsl-run:disabled{background:#1e293b;color:#475569;cursor:default}
+.rsl-view{flex:0 0 50px;background:#334155;color:#cbd5e1;border:0;border-radius:5px;
+          font-size:15px;cursor:pointer;min-height:38px;touch-action:manipulation}
+.rsl-view:active{background:#475569}
+.rsl-view:disabled{background:#1e293b;color:#475569;cursor:default}
+.rsl-status{font:10px/1.35 ui-monospace,monospace;color:#64748b;min-height:13px;word-break:break-all}
+#rs-save{margin-top:10px;width:100%;padding:9px;background:#1e3a5f;color:#93c5fd;
+         border:1px solid #2563eb;border-radius:6px;font-size:12px;font-weight:700;
+         cursor:pointer;min-height:40px;touch-action:manipulation}
+#rs-save:active{background:#1e40af}
+
+/* ── DROPDOWN / SELECT fix for iOS ── */
+select{-webkit-appearance:auto!important;appearance:auto!important;font-size:16px!important;
+       background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;border-radius:6px;padding:6px 8px}
+</style>
+</head><body>
+<div id="shell">
+
+  <!-- TOP CHROME -->
+  <div id="top">
+    <div id="bar">
+      <span class="dot" id="dot"></span>
+      <span id="state">Connecting…</span>
+      <span id="url"></span>
+    </div>
+
+    <div id="actions">
+      <button class="top-btn" id="reload">⟳ Reload</button>
+      <button class="top-btn" id="hide">🙈 Hide</button>
+      <button class="top-btn" id="reset">⟲ Reset</button>
+      <button class="top-btn" id="btn-desktop" title="Toggle desktop viewport (1024px wide)">🖥 Desktop</button>
+      <span style="flex:1"></span>
+      <button class="top-btn" id="btn-zoom-out">−</button>
+      <span id="zoom-label">100%</span>
+      <button class="top-btn" id="btn-zoom-in">+</button>
+      <button class="top-btn" id="btn-panel">☰ Panel</button>
+    </div>
+
+    <div id="nav">
+      <input id="newurl" placeholder="Paste a URL…" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+      <button id="open">Open</button>
+    </div>
+    <div id="tabs"></div>
+  </div>
+
+  <!-- VIEWER STAGE -->
+  <div id="stage-wrap">
+    <div id="stage-zoom">
+      <div id="stage">
+        <iframe id="fa" class="shown"></iframe>
+        <iframe id="fb" class="hidden"></iframe>
+      </div>
+    </div>
+    <div id="stage-hint">👆 1-finger = interact &nbsp;|&nbsp; 2-finger = scroll</div>
+  </div>
+
+  <!-- BOTTOM PANEL -->
+  <div id="bottom" class="open">
+    <div id="console">
+      <textarea id="code" placeholder="Paste JS… Ctrl+Enter to run." autocorrect="off" autocapitalize="none" spellcheck="false"></textarea>
+      <button id="run">Run on A<br><small>Ctrl+Enter</small></button>
+    </div>
+    <div id="out">// output appears here</div>
+    <div id="rs">
+      <h3>☁ Remote Scripts</h3>
+      <p class="hint">Fetches the script from its URL, then runs it on A. Edit any URL, then “Save to File” to keep your changes.</p>
+      <div class="rsg" id="rsg"></div>
+      <button id="rs-save">💾 Save to File — bakes these URLs into the HTML</button>
+    </div>
+  </div>
+
 </div>
-<div id="stage"><iframe id="fa" class="shown"></iframe><iframe id="fb" class="hidden"></iframe></div>
-<div id="console">
-  <textarea id="code" placeholder="Paste JS to run on A's focused tab.  Ctrl+Enter to run."></textarea>
-  <button id="run">Run on A<br><small>Ctrl+Enter</small></button>
-</div>
-<div id="out">// console output from A appears here</div>
+
 <script>
 // ============================================================
-//  CONFIG  (Extension B - Viewer)
-//  RB_DB and SESSION must MATCH Extension A exactly.
+//  CONFIG
 // ============================================================
 const RB_CONFIG = {
   RB_DB: "https://remote-browser-2-default-rtdb.firebaseio.com",
   SESSION: "default"
 };
-
 </script>
+
 <script>
 // ============================================================
-//  Remote Browser — Extension B — viewer.js  v2.3
-//  + URL validation, contenteditable typing, reload-all, hide-A,
-//    notices from A, and a reset that never hangs.
+//  Remote Browser — Viewer v3.0 (mobile-first)
 // ============================================================
-const B = `${RB_CONFIG.RB_DB}/session/${RB_CONFIG.SESSION}`;
-const DOM_URL=`${B}/dom.json`, CMD_URL=`${B}/commands.json`, TABS_URL=`${B}/tabs.json`,
-      CTRL_URL=`${B}/control.json`, EVAL_URL=`${B}/evalResult.json`, NOTE_URL=`${B}/notice.json`;
+const B=`${RB_CONFIG.RB_DB}/session/${RB_CONFIG.SESSION}`;
+const DOM_URL=`${B}/dom.json`,CMD_URL=`${B}/commands.json`,TABS_URL=`${B}/tabs.json`,
+      CTRL_URL=`${B}/control.json`,EVAL_URL=`${B}/evalResult.json`,NOTE_URL=`${B}/notice.json`;
 
-const dot=document.getElementById("dot"), stateEl=document.getElementById("state"),
-      urlEl=document.getElementById("url"), tabsEl=document.getElementById("tabs"),
-      out=document.getElementById("out"), fa=document.getElementById("fa"), fb=document.getElementById("fb");
+const dot=document.getElementById("dot"),stateEl=document.getElementById("state"),
+      urlEl=document.getElementById("url"),tabsEl=document.getElementById("tabs"),
+      out=document.getElementById("out"),fa=document.getElementById("fa"),fb=document.getElementById("fb"),
+      stage=document.getElementById("stage"),stageZoom=document.getElementById("stage-zoom"),
+      stageWrap=document.getElementById("stage-wrap");
 
-let front=fa, back=fb, lastDomTs=0, activeTabId=null, lastHtml="", lastNoteTs=0;
-let desiredScroll={x:0,y:0}, isTyping=false, pendingSnap=null, scrollTimer=null, hidden=false;
+let front=fa,back=fb,lastDomTs=0,activeTabId=null,lastHtml="",lastNoteTs=0;
+let desiredScroll={x:0,y:0},isTyping=false,pendingSnap=null,scrollTimer=null,hidden=false;
+let zoomLevel=1.0;
 
-async function sendCommand(cmd){ cmd.ts=Date.now();
-  try{ await fetch(CMD_URL,{method:"POST",body:JSON.stringify(cmd)}); }catch(e){ console.error("[RB-B] send",e); } }
+async function sendCommand(cmd){
+  cmd.ts=Date.now();
+  try{ await fetch(CMD_URL,{method:"POST",body:JSON.stringify(cmd)}); }catch(e){ console.error("[RB-B]",e); }
+}
 
-function forwardScroll(win){ clearTimeout(scrollTimer);
-  scrollTimer=setTimeout(()=>{ desiredScroll={x:win.scrollX,y:win.scrollY};
-    sendCommand({type:"scroll",x:desiredScroll.x,y:desiredScroll.y}); },120); }
+function forwardScroll(win){
+  clearTimeout(scrollTimer);
+  scrollTimer=setTimeout(()=>{
+    desiredScroll={x:win.scrollX,y:win.scrollY};
+    sendCommand({type:"scroll",x:desiredScroll.x,y:desiredScroll.y});
+  },120);
+}
 
-function ceHost(node){ // nearest contenteditable host for a node
-  let n=node; while(n&&n!==document){ if(n.isContentEditable||n.getAttribute?.("contenteditable")!=null) return n; n=n.parentNode; } return null; }
+function ceHost(node){ let n=node; while(n&&n!==document){ if(n.isContentEditable||n.getAttribute?.("contenteditable")!=null) return n; n=n.parentNode; } return null; }
 
-function wire(frame){ const win=frame.contentWindow, doc=frame.contentDocument; if(!doc) return;
-  doc.addEventListener("click",(e)=>{ const el=e.target.closest("[data-rb-id]"); if(!el) return;
-    const t=(el.tagName||"").toLowerCase(), field=t==="input"||t==="textarea"||t==="select"||el.isContentEditable;
-    if(!field) e.preventDefault(); sendCommand({type:"click",rbId:el.getAttribute("data-rb-id")}); },true);
+function wire(frame){
+  const win=frame.contentWindow,doc=frame.contentDocument; if(!doc) return;
+  doc.addEventListener("click",(e)=>{
+    const el=e.target.closest("[data-rb-id]"); if(!el) return;
+    const t=(el.tagName||"").toLowerCase(),field=t==="input"||t==="textarea"||t==="select"||el.isContentEditable;
+    if(!field) e.preventDefault();
+    sendCommand({type:"click",rbId:el.getAttribute("data-rb-id")});
+  },true);
   doc.addEventListener("input",(e)=>{
     const ce=ceHost(e.target);
-    if(ce){ const host=ce.closest("[data-rb-id]")||ce;
-      sendCommand({type:"input",rbId:host.getAttribute("data-rb-id"),value:ce.textContent,mode:"ce"}); return; }
+    if(ce){ const host=ce.closest("[data-rb-id]")||ce; sendCommand({type:"input",rbId:host.getAttribute("data-rb-id"),value:ce.textContent,mode:"ce"}); return; }
     const el=e.target.closest("[data-rb-id]");
-    if(el) sendCommand({type:"input",rbId:el.getAttribute("data-rb-id"),value:e.target.value}); },true);
+    if(el) sendCommand({type:"input",rbId:el.getAttribute("data-rb-id"),value:e.target.value});
+  },true);
   doc.addEventListener("submit",(e)=>e.preventDefault(),true);
-  doc.addEventListener("focusin",(e)=>{ const t=(e.target.tagName||"").toLowerCase();
-    if(t==="input"||t==="textarea"||e.target.isContentEditable) isTyping=true; },true);
-  doc.addEventListener("focusout",()=>{ isTyping=false; if(pendingSnap){ const s=pendingSnap; pendingSnap=null; render(s); } },true);
+  doc.addEventListener("focusin",(e)=>{ const t=(e.target.tagName||"").toLowerCase(); if(t==="input"||t==="textarea"||e.target.isContentEditable) isTyping=true; },true);
+  doc.addEventListener("focusout",()=>{ isTyping=false; if(pendingSnap){const s=pendingSnap;pendingSnap=null;render(s);} },true);
   win.addEventListener("scroll",()=>forwardScroll(win),{passive:true});
 }
-function captureFocus(frame){ try{ const d=frame.contentDocument,a=d&&d.activeElement;
-  if(a&&a.getAttribute&&a.getAttribute("data-rb-id")) return {id:a.getAttribute("data-rb-id"),s:a.selectionStart,e:a.selectionEnd}; }catch{} return null; }
-function restoreFocus(frame,f){ if(!f) return; try{ const el=frame.contentDocument.querySelector(`[data-rb-id="${f.id}"]`);
-  if(el){ el.focus(); if(f.s!=null&&el.setSelectionRange){ try{el.setSelectionRange(f.s,f.e);}catch{} } } }catch{} }
 
-function render(snap){ if(!snap||!snap.html) return;
+function captureFocus(frame){ try{ const d=frame.contentDocument,a=d&&d.activeElement; if(a&&a.getAttribute&&a.getAttribute("data-rb-id")) return {id:a.getAttribute("data-rb-id"),s:a.selectionStart,e:a.selectionEnd}; }catch{} return null; }
+function restoreFocus(frame,f){ if(!f) return; try{ const el=frame.contentDocument.querySelector(`[data-rb-id="${f.id}"]`); if(el){ el.focus(); if(f.s!=null&&el.setSelectionRange){ try{el.setSelectionRange(f.s,f.e);}catch{} } } }catch{} }
+
+function render(snap){
+  if(!snap||!snap.html) return;
   if(snap.html===lastHtml) return;
   if(isTyping){ pendingSnap=snap; return; }
   lastHtml=snap.html; urlEl.textContent=snap.url||"";
-  const keep=desiredScroll, foc=captureFocus(front);
-  back.onload=()=>{ wire(back);
-    try{ back.contentWindow.scrollTo(keep.x||snap.sx||0, keep.y||snap.sy||0); }catch{}
+  const keep=desiredScroll,foc=captureFocus(front);
+  back.onload=()=>{
+    wire(back);
+    try{ back.contentWindow.scrollTo(keep.x||snap.sx||0,keep.y||snap.sy||0); }catch{}
     restoreFocus(back,foc);
-    back.className="shown"; front.className="hidden"; [front,back]=[back,front]; };
+    back.className="shown"; front.className="hidden"; [front,back]=[back,front];
+  };
   back.srcdoc=snap.html;
 }
 
-function renderTabs(tabs){ tabsEl.innerHTML="";
+function renderTabs(tabs){
+  tabsEl.innerHTML="";
   Object.values(tabs||{}).forEach((t)=>{
     const d=document.createElement("div"); d.className="tab"+(t.tabId===activeTabId?" active":""); d.title=t.url;
     const lbl=document.createElement("span"); lbl.className="lbl"; lbl.textContent=t.title||t.url;
@@ -127,36 +285,34 @@ function renderTabs(tabs){ tabsEl.innerHTML="";
   });
 }
 
-function subscribe(url,cb){ const es=new EventSource(url);
-  es.addEventListener("put",(e)=>{ try{ cb(JSON.parse(e.data).data); }catch{} }); return es; }
+function subscribe(url,cb){ const es=new EventSource(url); es.addEventListener("put",(e)=>{ try{ cb(JSON.parse(e.data).data); }catch{} }); return es; }
 
-subscribe(DOM_URL,(d)=>{ if(!d||!d.html||(d.ts&&d.ts<=lastDomTs)) return; lastDomTs=d.ts||Date.now();
-  dot.classList.add("live"); stateEl.textContent="Live"; render(d); });
+subscribe(DOM_URL,(d)=>{ if(!d||!d.html||(d.ts&&d.ts<=lastDomTs)) return; lastDomTs=d.ts||Date.now(); dot.classList.add("live"); stateEl.textContent="Live"; render(d); });
 let cachedTabs={};
 subscribe(TABS_URL,(d)=>{ cachedTabs=d||{}; renderTabs(cachedTabs); });
 subscribe(CTRL_URL,(d)=>{ if(d){ activeTabId=d.activeTabId; renderTabs(cachedTabs); } });
 subscribe(EVAL_URL,(d)=>{ if(d&&d.out!==undefined) out.textContent=String(d.out); });
 subscribe(NOTE_URL,(d)=>{ if(d&&d.text&&d.ts>lastNoteTs){ lastNoteTs=d.ts; stateEl.textContent="⚠ "+d.text; out.textContent="// A: "+d.text; } });
 
-// ---- open URL as a new tab on A (validated) ----
+// ── URL OPEN ──
 function validUrl(u){ return /^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]{2,})+(\/[^\s]*)?$/i.test((u||"").trim()); }
 const newurl=document.getElementById("newurl");
-const openUrl=()=>{ const u=newurl.value.trim();
-  if(!u) return;
-  if(!validUrl(u)){ stateEl.textContent="⚠ Invalid URL (need e.g. www.site.com)"; newurl.focus(); return; }
-  sendCommand({type:"openTab",url:u}); newurl.value=""; };
+const openUrl=()=>{
+  const u=newurl.value.trim(); if(!u) return;
+  if(!validUrl(u)){ stateEl.textContent="⚠ Invalid URL"; newurl.focus(); return; }
+  sendCommand({type:"openTab",url:u}); newurl.value="";
+};
 document.getElementById("open").addEventListener("click",openUrl);
 newurl.addEventListener("keydown",(e)=>{ if(e.key==="Enter") openUrl(); });
 
-// ---- reload all tabs on A ----
+// ── RELOAD ──
 document.getElementById("reload").addEventListener("click",()=>{ sendCommand({type:"reloadAll"}); stateEl.textContent="Reloading A…"; });
 
-// ---- hide A off-screen (toggle) ----
+// ── HIDE ──
 const hideBtn=document.getElementById("hide");
-hideBtn.addEventListener("click",()=>{ hidden=!hidden; sendCommand({type:"offscreen",on:hidden});
-  hideBtn.textContent=hidden?"👁 Show A":"🙈 Hide A"; });
+hideBtn.addEventListener("click",()=>{ hidden=!hidden; sendCommand({type:"offscreen",on:hidden}); hideBtn.textContent=hidden?"👁 Show":"🙈 Hide"; });
 
-// ---- reset: delete session nodes directly so B never hangs ----
+// ── RESET ──
 document.getElementById("reset").addEventListener("click",async ()=>{
   stateEl.textContent="Resetting…";
   await Promise.all(["dom","commands","control","evalResult","tabs","notice"].map(p=>fetch(`${B}/${p}.json`,{method:"DELETE"}).catch(()=>{})));
@@ -165,81 +321,186 @@ document.getElementById("reset").addEventListener("click",async ()=>{
   await sendCommand({type:"reset"});
 });
 
-// ---- multi-line JS console (Ctrl+Enter) ----
-const code=document.getElementById("code");
-const run=()=>{ const c=code.value.trim(); if(c){ out.textContent="running…"; sendCommand({type:"eval",code:c}); } };
-document.getElementById("run").addEventListener("click",run);
-code.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); run(); } });
+// ── DESKTOP MODE ──
+const btnDesktop=document.getElementById("btn-desktop");
+let desktopMode=false;
+btnDesktop.addEventListener("click",()=>{
+  desktopMode=!desktopMode;
+  stage.classList.toggle("desktop-mode",desktopMode);
+  btnDesktop.classList.toggle("on",desktopMode);
+  btnDesktop.textContent=desktopMode?"🖥 Desktop ✓":"🖥 Desktop";
+  // Also set iframe min-width
+  [fa,fb].forEach(f=>{ f.style.minWidth=desktopMode?"1024px":"100%"; });
+  stateEl.textContent=desktopMode?"Desktop mode ON (1024px)":"Mobile mode";
+});
 
+// ── ZOOM CONTROLS ──
+const zoomLabel=document.getElementById("zoom-label");
+function applyZoom(){
+  stageZoom.style.transform=`scale(${zoomLevel})`;
+  stageZoom.style.width=(100/zoomLevel)+"%";
+  stageZoom.style.height=(100/zoomLevel)+"%";
+  zoomLabel.textContent=Math.round(zoomLevel*100)+"%";
+}
+document.getElementById("btn-zoom-in").addEventListener("click",()=>{ zoomLevel=Math.min(2.0,+(zoomLevel+0.1).toFixed(1)); applyZoom(); });
+document.getElementById("btn-zoom-out").addEventListener("click",()=>{ zoomLevel=Math.max(0.3,+(zoomLevel-0.1).toFixed(1)); applyZoom(); });
+
+// ── BOTTOM PANEL TOGGLE ──
+const bottom=document.getElementById("bottom");
+const btnPanel=document.getElementById("btn-panel");
+let panelOpen=true;
+btnPanel.addEventListener("click",()=>{
+  panelOpen=!panelOpen;
+  bottom.classList.toggle("open",panelOpen);
+  bottom.classList.toggle("closed",!panelOpen);
+  btnPanel.textContent=panelOpen?"☰ Panel":"☰ Panel ▲";
+});
+
+// ── JS CONSOLE ──
+const codeEl=document.getElementById("code");
+const runCode=()=>{ const c=codeEl.value.trim(); if(c){ out.textContent="running…"; sendCommand({type:"eval",code:c}); } };
+document.getElementById("run").addEventListener("click",runCode);
+codeEl.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); runCode(); } });
+
+// ── STAGE SCROLL: 1-finger interacts, 2-finger scrolls stage ──
+const hint=document.getElementById("stage-hint");
+setTimeout(()=>hint.classList.add("fade"),4000);
+setTimeout(()=>hint.remove(),5000);
+
+let t0=null,tScrolling=false;
+stageWrap.addEventListener("touchstart",(e)=>{
+  if(e.touches.length===2){ tScrolling=true; t0={x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.touches[0].clientY+e.touches[1].clientY)/2}; }
+  else{ tScrolling=false; }
+},{passive:true});
+stageWrap.addEventListener("touchmove",(e)=>{
+  if(!tScrolling||!t0) return;
+  const cx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+  const cy=(e.touches[0].clientY+e.touches[1].clientY)/2;
+  stage.scrollLeft+=t0.x-cx;
+  stage.scrollTop+=t0.y-cy;
+  t0={x:cx,y:cy};
+},{passive:true});
+stageWrap.addEventListener("touchend",()=>{ tScrolling=false; t0=null; },{passive:true});
 </script>
 
-
-<button id="fab" style="position:fixed;right:16px;bottom:16px;z-index:99999;border:none;border-radius:999px;padding:14px 16px;background:#2563eb;color:white;font-weight:bold">⚡ Scripts</button>
-
-<div id="scriptManager" style="position:fixed;left:0;right:0;bottom:-80%;height:80%;background:#111827;color:white;padding:10px;overflow:auto;z-index:99998;transition:.25s">
-<h3 style="margin:4px 0">⚡ Quick Scripts</h3>
-<input id="scriptName" placeholder="Script Name" style="width:100%;margin-bottom:6px">
-<textarea id="scriptBody" placeholder="Paste script here" style="width:100%;height:120px"></textarea>
-<button id="saveScript">Save Script</button>
-<div id="savedScripts" style="margin-top:8px"></div>
-</div>
-
-
+<!-- REMOTE SCRIPTS -->
 <script>
 (function(){
-const KEY='rb_saved_scripts_v1';
 
-function loadScripts(){
- return JSON.parse(localStorage.getItem(KEY)||'[]');
+// ═══════════════════════════════════════════════════════════════
+//  REMOTE SCRIPTS — each slot holds a raw script URL (e.g. a
+//  GitHub Gist "raw" link). "Fetch & Run" downloads it live and
+//  runs it on A. Edit a URL then "Save to File" to persist it.
+//  Pinned commit-hash URLs always serve that exact version; a
+//  gist raw URL WITHOUT the hash always serves the latest.
+// ═══════════════════════════════════════════════════════════════
+var REMOTE_SCRIPTS=[
+{name:"Dropped grabber", url:"https://gist.githubusercontent.com/maniimanpreet0-spec/b9445aee489e39515cf261d2069a8a62/raw/f1c31915dbd32ec9e663cc1ce3881d6a10c011fd/Dropped%2520grabber"},
+{name:"Fetcher", url:"https://gist.githubusercontent.com/maniimanpreet0-spec/4e76f6ceea27b627ce33283cc155aaad/raw/67e701e4675a5dbc4ffde6f695c0a11bcf8b5d92/Fetcher"},
+{name:"Assign / Unassign", url:"https://gist.githubusercontent.com/maniimanpreet0-spec/2736b732ca4d6eb9fc89c35d53ef718c/raw/a4ef5e5cc5d4cf79a3daf1c4cecd8e375b2d0a8f/Assign%2520and%2520Unassign"},
+{name:"JA Reset", url:"https://gist.githubusercontent.com/maniimanpreet0-spec/f0e2738fd0d4f9af9f52cdf619d80132/raw/3b47ddcc488f2c9c38913314a8342125b64fd0e7/JA%2520Reset"},
+{name:"Monitor", url:"https://gist.githubusercontent.com/maniimanpreet0-spec/943d622d4736e272225ad7a468bddd9f/raw/4d9e7cd1f1d9c6afe7be473be3fcc54bfeb8f8f9/Monitor"},
+{name:"", url:""},
+{name:"", url:""},
+{name:"", url:""},
+{name:"", url:""}
+];
+// ═══════════════════════════════════════════════════════════════
+
+function setStatus(i,msg,color){
+  var el=document.querySelector('.rsl[data-i="'+i+'"] .rsl-status');
+  if(el){ el.textContent=msg; el.style.color=color||'#64748b'; }
 }
-function saveScripts(v){
- localStorage.setItem(KEY,JSON.stringify(v));
- renderScripts();
+
+async function fetchScript(url){
+  // cache-buster so re-fetch always gets fresh content for non-pinned URLs
+  var u=url+(url.indexOf('?')>-1?'&':'?')+'_='+Date.now();
+  var r=await fetch(u,{cache:'no-store'});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  var t=await r.text();
+  if(!t.trim()) throw new Error('empty file');
+  return t;
 }
-function runSaved(code){
- if(typeof sendCommand==='function'){
-   sendCommand({type:'eval',code});
- }
+
+async function runRemote(i){
+  var s=REMOTE_SCRIPTS[i]; if(!s.url.trim()) return;
+  setStatus(i,'⏳ fetching…','#fbbf24');
+  try{
+    var code=await fetchScript(s.url.trim());
+    if(typeof sendCommand!=='function'){ setStatus(i,'✗ viewer not ready','#f87171'); return; }
+    sendCommand({type:'eval',code:code});
+    setStatus(i,'✓ sent to A — '+code.length+' chars','#6ee7b7');
+  }catch(e){ setStatus(i,'✗ '+e.message+' — check the URL','#f87171'); }
 }
-function renderScripts(){
- const box=document.getElementById('savedScripts');
- if(!box) return;
- box.innerHTML='';
- loadScripts().forEach((s,i)=>{
-   const row=document.createElement('div');
-   row.style.margin='6px 0';
-   row.innerHTML=`<button class="runBtn">${s.name}</button>
-                  <button class="delBtn">🗑</button>`;
-   row.querySelector('.runBtn').onclick=()=>runSaved(s.code);
-   row.querySelector('.delBtn').onclick=()=>{
-      const arr=loadScripts();
-      arr.splice(i,1);
-      saveScripts(arr);
-   };
-   box.appendChild(row);
- });
+
+async function viewRemote(i){
+  var s=REMOTE_SCRIPTS[i]; if(!s.url.trim()) return;
+  setStatus(i,'⏳ loading…','#fbbf24');
+  try{
+    var code=await fetchScript(s.url.trim());
+    var ce=document.getElementById('code'); if(ce) ce.value=code;
+    setStatus(i,'✓ loaded into console — '+code.length+' chars (not run)','#6ee7b7');
+  }catch(e){ setStatus(i,'✗ '+e.message+' — check the URL','#f87171'); }
 }
-window.addEventListener('load',()=>{
- document.getElementById('saveScript').onclick=()=>{
-   const name=document.getElementById('scriptName').value.trim();
-   const code=document.getElementById('scriptBody').value;
-   if(!name||!code) return alert('Enter name and script');
-   const arr=loadScripts();
-   arr.push({name,code});
-   saveScripts(arr);
-   document.getElementById('scriptName').value='';
- };
- renderScripts();
+
+function renderSlots(){
+  var g=document.getElementById('rsg'); if(!g) return; g.innerHTML='';
+  REMOTE_SCRIPTS.forEach(function(s,i){
+    var d=document.createElement('div'); d.className='rsl'; d.setAttribute('data-i',i);
+
+    var row=document.createElement('div'); row.className='rsl-row';
+    var n=document.createElement('input'); n.className='rsl-name'; n.value=s.name; n.placeholder='Name…';
+    n.setAttribute('autocorrect','off'); n.setAttribute('autocapitalize','none'); n.setAttribute('spellcheck','false');
+    var u=document.createElement('input'); u.className='rsl-url'; u.value=s.url; u.placeholder='https://gist…/raw/…';
+    u.setAttribute('autocorrect','off'); u.setAttribute('autocapitalize','none'); u.setAttribute('spellcheck','false');
+    u.setAttribute('inputmode','url');
+    row.append(n,u);
+
+    var btns=document.createElement('div'); btns.className='rsl-btns';
+    var b=document.createElement('button'); b.className='rsl-run'; b.type='button';
+    b.textContent='▶ Fetch & Run'; b.disabled=!s.url.trim();
+    var v=document.createElement('button'); v.className='rsl-view'; v.type='button';
+    v.textContent='👁'; v.title='Fetch into console (inspect, do not run)'; v.disabled=!s.url.trim();
+    btns.append(b,v);
+
+    var st=document.createElement('div'); st.className='rsl-status';
+    st.textContent=s.url.trim()?'ready':'empty slot';
+
+    n.oninput=function(){ REMOTE_SCRIPTS[i].name=n.value; };
+    u.oninput=function(){
+      REMOTE_SCRIPTS[i].url=u.value;
+      var on=!!u.value.trim(); b.disabled=!on; v.disabled=!on;
+      st.textContent=on?'ready':'empty slot'; st.style.color='#64748b';
+    };
+    b.onclick=function(){ runRemote(i); };
+    v.onclick=function(){ viewRemote(i); };
+
+    d.append(row,btns,st); g.appendChild(d);
+  });
+}
+
+function saveToFile(){
+  document.querySelectorAll('#rsg .rsl').forEach(function(d,i){
+    REMOTE_SCRIPTS[i].name=d.querySelector('.rsl-name').value;
+    REMOTE_SCRIPTS[i].url=d.querySelector('.rsl-url').value;
+  });
+  function esc(str){ return (str||'').replace(/\\/g,'\\\\').replace(/"/g,'\\"'); }
+  var arr='var REMOTE_SCRIPTS=[\n'+REMOTE_SCRIPTS.map(function(s){
+    return '{name:"'+esc(s.name)+'", url:"'+esc(s.url)+'"}';
+  }).join(',\n')+'\n];';
+  var src=document.documentElement.outerHTML;
+  var updated=src.replace(/var REMOTE_SCRIPTS=\[[\s\S]*?\];/,arr);
+  var blob=new Blob([updated],{type:'text/html'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='viewer-mobile-remote.html'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+}
+
+window.addEventListener('load',function(){
+  renderSlots();
+  var sv=document.getElementById('rs-save'); if(sv) sv.onclick=saveToFile;
 });
 })();
-</script>
-
-
-<script>
-document.getElementById('fab').onclick=function(){
- const p=document.getElementById('scriptManager');
- p.style.bottom=(p.style.bottom==='0px'||p.style.bottom==='0')?'-80%':'0';
-};
 </script>
 
 </body></html>

@@ -127,10 +127,8 @@ function renderTabs(tabs){ tabsEl.innerHTML="";
   });
 }
 
-function subscribe(url,cb){
-window.__rbSubs = window.__rbSubs || [];
-window.__rbSubs.push({url,cb,last:null});
-}
+function subscribe(url,cb){ const es=new EventSource(url);
+  es.addEventListener("put",(e)=>{ try{ cb(JSON.parse(e.data).data); }catch{} }); return es; }
 
 subscribe(DOM_URL,(d)=>{ if(!d||!d.html||(d.ts&&d.ts<=lastDomTs)) return; lastDomTs=d.ts||Date.now();
   dot.classList.add("live"); stateEl.textContent="Live"; render(d); });
@@ -230,29 +228,6 @@ window.addEventListener('load',()=>{
  renderScripts();
 });
 })();
-</script>
-
-
-<script>
-// iPhone/Safari polling replacement for EventSource
-setInterval(async ()=>{
-  const subs = window.__rbSubs || [];
-  for(const s of subs){
-    try{
-      const r = await fetch(s.url,{cache:'no-store'});
-      const data = await r.json();
-      const sig = JSON.stringify(data)?.slice(0,200);
-      if(sig !== s.last){
-        s.last = sig;
-        s.cb(data);
-      }
-      const st=document.getElementById('state');
-      const dot=document.getElementById('dot');
-      if(st) st.textContent='Live';
-      if(dot) dot.classList.add('live');
-    }catch(e){}
-  }
-},500);
 </script>
 
 </body></html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta charset="utf-8"><title>Remote Browser — Viewer</title>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,sans-serif;background:#0b0f17}
+  #top{background:#0f172a;color:#e5e7eb}
+  #bar{display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:13px;border-bottom:1px solid #1e293b}
+  #bar .dot{width:9px;height:9px;border-radius:50%;background:#9ca3af;flex:0 0 auto}
+  #bar .dot.live{background:#22c55e}
+  #url{color:#93c5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  #reload,#hide{color:#fff;border:0;border-radius:6px;padding:5px 10px;font-weight:600;cursor:pointer;font-size:12px}
+  #reload{background:#0891b2}#hide{background:#7c3aed}
+  #reset{background:#dc2626;color:#fff;border:0;border-radius:6px;padding:5px 10px;font-weight:600;cursor:pointer;font-size:12px}
+  #nav{display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid #1e293b}
+  #newurl{flex:1;background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;border-radius:7px;padding:6px 9px;font-size:12px}
+  #open{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:0 12px;font-weight:600;cursor:pointer;font-size:12px}
+  #tabs{display:flex;gap:6px;padding:6px 12px;overflow-x:auto;border-bottom:1px solid #1e293b}
+  .tab{display:flex;align-items:center;gap:6px;padding:5px 8px 5px 10px;border-radius:7px;background:#1e293b;color:#cbd5e1;
+       font-size:12px;white-space:nowrap;cursor:pointer;border:1px solid transparent;max-width:240px}
+  .tab:hover{background:#334155}
+  .tab.active{background:#2563eb;color:#fff;border-color:#60a5fa}
+  .tab .lbl{overflow:hidden;text-overflow:ellipsis}
+  .tab .x{opacity:.6;font-weight:700;padding:0 2px;border-radius:4px}
+  .tab .x:hover{opacity:1;background:rgba(255,255,255,.2)}
+  #stage{position:relative;width:100%;height:calc(100% - 210px);background:#fff}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+  iframe.hidden{visibility:hidden;z-index:0} iframe.shown{visibility:visible;z-index:1}
+  #console{display:flex;gap:8px;padding:6px 12px;background:#0f172a;border-top:1px solid #1e293b;align-items:stretch}
+  #code{flex:1;height:54px;resize:vertical;background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;border-radius:7px;
+        padding:7px 9px;font:12px/1.45 ui-monospace,Menlo,monospace}
+  #run{background:#16a34a;color:#fff;border:0;border-radius:7px;padding:0 14px;font-weight:600;cursor:pointer;white-space:nowrap}
+  #out{padding:4px 12px 8px;color:#a7f3d0;font:11px/1.4 ui-monospace,monospace;background:#0f172a;
+       max-height:64px;overflow:auto;white-space:pre-wrap;border-top:1px solid #1e293b}
+</style></head><body>
+<div id="top">
+  <div id="bar"><span class="dot" id="dot"></span><span id="state">Connecting…</span><span id="url"></span>
+    <button id="reload" title="Reload all tabs on A">⟳ Reload all</button>
+    <button id="hide" title="Move A's window off-screen (invisible)">🙈 Hide A</button>
+    <button id="reset" title="Wipe Firebase session and start fresh">⟲ Reset</button></div>
+  <div id="nav"><input id="newurl" placeholder="Paste a URL to open as a new tab on A…" autocomplete="off">
+    <button id="open">Open on A</button></div>
+  <div id="tabs"></div>
+</div>
+<div id="stage"><iframe id="fa" class="shown"></iframe><iframe id="fb" class="hidden"></iframe></div>
+<div id="console">
+  <textarea id="code" placeholder="Paste JS to run on A's focused tab.  Ctrl+Enter to run."></textarea>
+  <button id="run">Run on A<br><small>Ctrl+Enter</small></button>
+</div>
+<div id="out">// console output from A appears here</div>
+<script>
+// ============================================================
+//  CONFIG  (Extension B - Viewer)
+//  RB_DB and SESSION must MATCH Extension A exactly.
+// ============================================================
+const RB_CONFIG = {
+  RB_DB: "https://remote-browser-2-default-rtdb.firebaseio.com",
+  SESSION: "default"
+};
+
+</script>
+<script>
+// ============================================================
+//  Remote Browser — Extension B — viewer.js  v2.3
+//  + URL validation, contenteditable typing, reload-all, hide-A,
+//    notices from A, and a reset that never hangs.
+// ============================================================
+const B = `${RB_CONFIG.RB_DB}/session/${RB_CONFIG.SESSION}`;
+const DOM_URL=`${B}/dom.json`, CMD_URL=`${B}/commands.json`, TABS_URL=`${B}/tabs.json`,
+      CTRL_URL=`${B}/control.json`, EVAL_URL=`${B}/evalResult.json`, NOTE_URL=`${B}/notice.json`;
+
+const dot=document.getElementById("dot"), stateEl=document.getElementById("state"),
+      urlEl=document.getElementById("url"), tabsEl=document.getElementById("tabs"),
+      out=document.getElementById("out"), fa=document.getElementById("fa"), fb=document.getElementById("fb");
+
+let front=fa, back=fb, lastDomTs=0, activeTabId=null, lastHtml="", lastNoteTs=0;
+let desiredScroll={x:0,y:0}, isTyping=false, pendingSnap=null, scrollTimer=null, hidden=false;
+
+async function sendCommand(cmd){ cmd.ts=Date.now();
+  try{ await fetch(CMD_URL,{method:"POST",body:JSON.stringify(cmd)}); }catch(e){ console.error("[RB-B] send",e); } }
+
+function forwardScroll(win){ clearTimeout(scrollTimer);
+  scrollTimer=setTimeout(()=>{ desiredScroll={x:win.scrollX,y:win.scrollY};
+    sendCommand({type:"scroll",x:desiredScroll.x,y:desiredScroll.y}); },120); }
+
+function ceHost(node){ // nearest contenteditable host for a node
+  let n=node; while(n&&n!==document){ if(n.isContentEditable||n.getAttribute?.("contenteditable")!=null) return n; n=n.parentNode; } return null; }
+
+function wire(frame){ const win=frame.contentWindow, doc=frame.contentDocument; if(!doc) return;
+  doc.addEventListener("click",(e)=>{ const el=e.target.closest("[data-rb-id]"); if(!el) return;
+    const t=(el.tagName||"").toLowerCase(), field=t==="input"||t==="textarea"||t==="select"||el.isContentEditable;
+    if(!field) e.preventDefault(); sendCommand({type:"click",rbId:el.getAttribute("data-rb-id")}); },true);
+  doc.addEventListener("input",(e)=>{
+    const ce=ceHost(e.target);
+    if(ce){ const host=ce.closest("[data-rb-id]")||ce;
+      sendCommand({type:"input",rbId:host.getAttribute("data-rb-id"),value:ce.textContent,mode:"ce"}); return; }
+    const el=e.target.closest("[data-rb-id]");
+    if(el) sendCommand({type:"input",rbId:el.getAttribute("data-rb-id"),value:e.target.value}); },true);
+  doc.addEventListener("submit",(e)=>e.preventDefault(),true);
+  doc.addEventListener("focusin",(e)=>{ const t=(e.target.tagName||"").toLowerCase();
+    if(t==="input"||t==="textarea"||e.target.isContentEditable) isTyping=true; },true);
+  doc.addEventListener("focusout",()=>{ isTyping=false; if(pendingSnap){ const s=pendingSnap; pendingSnap=null; render(s); } },true);
+  win.addEventListener("scroll",()=>forwardScroll(win),{passive:true});
+}
+function captureFocus(frame){ try{ const d=frame.contentDocument,a=d&&d.activeElement;
+  if(a&&a.getAttribute&&a.getAttribute("data-rb-id")) return {id:a.getAttribute("data-rb-id"),s:a.selectionStart,e:a.selectionEnd}; }catch{} return null; }
+function restoreFocus(frame,f){ if(!f) return; try{ const el=frame.contentDocument.querySelector(`[data-rb-id="${f.id}"]`);
+  if(el){ el.focus(); if(f.s!=null&&el.setSelectionRange){ try{el.setSelectionRange(f.s,f.e);}catch{} } } }catch{} }
+
+function render(snap){ if(!snap||!snap.html) return;
+  if(snap.html===lastHtml) return;
+  if(isTyping){ pendingSnap=snap; return; }
+  lastHtml=snap.html; urlEl.textContent=snap.url||"";
+  const keep=desiredScroll, foc=captureFocus(front);
+  back.onload=()=>{ wire(back);
+    try{ back.contentWindow.scrollTo(keep.x||snap.sx||0, keep.y||snap.sy||0); }catch{}
+    restoreFocus(back,foc);
+    back.className="shown"; front.className="hidden"; [front,back]=[back,front]; };
+  back.srcdoc=snap.html;
+}
+
+function renderTabs(tabs){ tabsEl.innerHTML="";
+  Object.values(tabs||{}).forEach((t)=>{
+    const d=document.createElement("div"); d.className="tab"+(t.tabId===activeTabId?" active":""); d.title=t.url;
+    const lbl=document.createElement("span"); lbl.className="lbl"; lbl.textContent=t.title||t.url;
+    const x=document.createElement("span"); x.className="x"; x.textContent="✕";
+    d.onclick=()=>{ activeTabId=t.tabId; renderTabs(tabs); sendCommand({type:"switchTab",tabId:t.tabId}); };
+    x.onclick=(e)=>{ e.stopPropagation(); sendCommand({type:"closeTab",tabId:t.tabId}); };
+    d.append(lbl,x); tabsEl.appendChild(d);
+  });
+}
+
+function subscribe(url,cb){
+window.__rbSubs = window.__rbSubs || [];
+window.__rbSubs.push({url,cb,last:null});
+}
+
+subscribe(DOM_URL,(d)=>{ if(!d||!d.html||(d.ts&&d.ts<=lastDomTs)) return; lastDomTs=d.ts||Date.now();
+  dot.classList.add("live"); stateEl.textContent="Live"; render(d); });
+let cachedTabs={};
+subscribe(TABS_URL,(d)=>{ cachedTabs=d||{}; renderTabs(cachedTabs); });
+subscribe(CTRL_URL,(d)=>{ if(d){ activeTabId=d.activeTabId; renderTabs(cachedTabs); } });
+subscribe(EVAL_URL,(d)=>{ if(d&&d.out!==undefined) out.textContent=String(d.out); });
+subscribe(NOTE_URL,(d)=>{ if(d&&d.text&&d.ts>lastNoteTs){ lastNoteTs=d.ts; stateEl.textContent="⚠ "+d.text; out.textContent="// A: "+d.text; } });
+
+// ---- open URL as a new tab on A (validated) ----
+function validUrl(u){ return /^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]{2,})+(\/[^\s]*)?$/i.test((u||"").trim()); }
+const newurl=document.getElementById("newurl");
+const openUrl=()=>{ const u=newurl.value.trim();
+  if(!u) return;
+  if(!validUrl(u)){ stateEl.textContent="⚠ Invalid URL (need e.g. www.site.com)"; newurl.focus(); return; }
+  sendCommand({type:"openTab",url:u}); newurl.value=""; };
+document.getElementById("open").addEventListener("click",openUrl);
+newurl.addEventListener("keydown",(e)=>{ if(e.key==="Enter") openUrl(); });
+
+// ---- reload all tabs on A ----
+document.getElementById("reload").addEventListener("click",()=>{ sendCommand({type:"reloadAll"}); stateEl.textContent="Reloading A…"; });
+
+// ---- hide A off-screen (toggle) ----
+const hideBtn=document.getElementById("hide");
+hideBtn.addEventListener("click",()=>{ hidden=!hidden; sendCommand({type:"offscreen",on:hidden});
+  hideBtn.textContent=hidden?"👁 Show A":"🙈 Hide A"; });
+
+// ---- reset: delete session nodes directly so B never hangs ----
+document.getElementById("reset").addEventListener("click",async ()=>{
+  stateEl.textContent="Resetting…";
+  await Promise.all(["dom","commands","control","evalResult","tabs","notice"].map(p=>fetch(`${B}/${p}.json`,{method:"DELETE"}).catch(()=>{})));
+  lastHtml="";lastDomTs=0;pendingSnap=null;isTyping=false;fa.srcdoc="";fb.srcdoc="";tabsEl.innerHTML="";urlEl.textContent="";out.textContent="// reset";
+  dot.classList.remove("live"); stateEl.textContent="Reset — waiting for A…";
+  await sendCommand({type:"reset"});
+});
+
+// ---- multi-line JS console (Ctrl+Enter) ----
+const code=document.getElementById("code");
+const run=()=>{ const c=code.value.trim(); if(c){ out.textContent="running…"; sendCommand({type:"eval",code:c}); } };
+document.getElementById("run").addEventListener("click",run);
+code.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); run(); } });
+
+</script>
+
+<div id="scriptManager" style="background:#111827;color:white;padding:10px;border-top:1px solid #333">
+<h3 style="margin:4px 0">⚡ Quick Scripts</h3>
+<input id="scriptName" placeholder="Script Name" style="width:100%;margin-bottom:6px">
+<textarea id="scriptBody" placeholder="Paste script here" style="width:100%;height:120px"></textarea>
+<button id="saveScript">Save Script</button>
+<div id="savedScripts" style="margin-top:8px"></div>
+</div>
+
+<script>
+(function(){
+const KEY='rb_saved_scripts_v1';
+
+function loadScripts(){
+ return JSON.parse(localStorage.getItem(KEY)||'[]');
+}
+function saveScripts(v){
+ localStorage.setItem(KEY,JSON.stringify(v));
+ renderScripts();
+}
+function runSaved(code){
+ if(typeof sendCommand==='function'){
+   sendCommand({type:'eval',code});
+ }
+}
+function renderScripts(){
+ const box=document.getElementById('savedScripts');
+ if(!box) return;
+ box.innerHTML='';
+ loadScripts().forEach((s,i)=>{
+   const row=document.createElement('div');
+   row.style.margin='6px 0';
+   row.innerHTML=`<button class="runBtn">${s.name}</button>
+                  <button class="delBtn">🗑</button>`;
+   row.querySelector('.runBtn').onclick=()=>runSaved(s.code);
+   row.querySelector('.delBtn').onclick=()=>{
+      const arr=loadScripts();
+      arr.splice(i,1);
+      saveScripts(arr);
+   };
+   box.appendChild(row);
+ });
+}
+window.addEventListener('load',()=>{
+ document.getElementById('saveScript').onclick=()=>{
+   const name=document.getElementById('scriptName').value.trim();
+   const code=document.getElementById('scriptBody').value;
+   if(!name||!code) return alert('Enter name and script');
+   const arr=loadScripts();
+   arr.push({name,code});
+   saveScripts(arr);
+   document.getElementById('scriptName').value='';
+ };
+ renderScripts();
+});
+})();
+</script>
+
+
+<script>
+// iPhone/Safari polling replacement for EventSource
+setInterval(async ()=>{
+  const subs = window.__rbSubs || [];
+  for(const s of subs){
+    try{
+      const r = await fetch(s.url,{cache:'no-store'});
+      const data = await r.json();
+      const sig = JSON.stringify(data)?.slice(0,200);
+      if(sig !== s.last){
+        s.last = sig;
+        s.cb(data);
+      }
+      const st=document.getElementById('state');
+      const dot=document.getElementById('dot');
+      if(st) st.textContent='Live';
+      if(dot) dot.classList.add('live');
+    }catch(e){}
+  }
+},500);
+</script>
+
+</body></html>

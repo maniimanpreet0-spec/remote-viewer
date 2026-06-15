@@ -197,14 +197,14 @@ select{-webkit-appearance:auto!important;appearance:auto!important;font-size:16p
 //  CONFIG
 // ============================================================
 const RB_CONFIG = {
-  RB_DB: "https://alternative1-7daad-default-rtdb.firebaseio.com",
+  RB_DB: "https://remote-browser-2-default-rtdb.firebaseio.com",
   SESSION: "default"
 };
 </script>
 
 <script>
 // ============================================================
-//  Remote Browser — Viewer v3.0 (mobile-first)
+//  Remote Browser — Viewer v3.1 (mobile-first) — decompresses deflate-raw payloads from A
 // ============================================================
 const B=`${RB_CONFIG.RB_DB}/session/${RB_CONFIG.SESSION}`;
 const DOM_URL=`${B}/dom.json`,CMD_URL=`${B}/commands.json`,TABS_URL=`${B}/tabs.json`,
@@ -225,6 +225,29 @@ async function sendCommand(cmd){
   try{ await fetch(CMD_URL,{method:"POST",body:JSON.stringify(cmd)}); }catch(e){ console.error("[RB-B]",e); }
 }
 
+// ── DECOMPRESSION ─────────────────────────────────────────────
+// Mirrors the compress() in content.js. If d.z===true, the html
+// field is a base64-encoded deflate-raw buffer; decompress it.
+// If z is missing/false (old snapshot or fallback), use as-is.
+async function maybeDecompress(d){
+  if(!d.z) return d.html;                         // uncompressed or legacy
+  try{
+    const bin=atob(d.html);
+    const buf=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    const ds=new DecompressionStream("deflate-raw");
+    const writer=ds.writable.getWriter();
+    writer.write(buf); writer.close();
+    const chunks=[]; const reader=ds.readable.getReader();
+    while(true){ const{done,value}=await reader.read(); if(done) break; chunks.push(value); }
+    const total=chunks.reduce((n,c)=>n+c.length,0);
+    const merged=new Uint8Array(total); let offset=0;
+    for(const c of chunks){ merged.set(c,offset); offset+=c.length; }
+    return new TextDecoder().decode(merged);
+  }catch(e){ console.error("[RB-B] decompress failed",e); return d.html; }
+}
+// ─────────────────────────────────────────────────────────────
+
 function forwardScroll(win){
   clearTimeout(scrollTimer);
   scrollTimer=setTimeout(()=>{
@@ -235,13 +258,27 @@ function forwardScroll(win){
 
 function ceHost(node){ let n=node; while(n&&n!==document){ if(n.isContentEditable||n.getAttribute?.("contenteditable")!=null) return n; n=n.parentNode; } return null; }
 
+// Click dedup: ignore same rbId within 800ms — prevents infinite loop
+// when a toggle mutation causes re-render which re-fires the click.
+const _cmdLastSent={};
+function sendCommandDeduped(cmd){
+  if(cmd.type==="click"){
+    const now=Date.now(), key=cmd.rbId;
+    if(_cmdLastSent[key]&&now-_cmdLastSent[key]<800) return; // drop dupe
+    _cmdLastSent[key]=now;
+  }
+  sendCommand(cmd);
+}
+
 function wire(frame){
   const win=frame.contentWindow,doc=frame.contentDocument; if(!doc) return;
+  if(doc.__rbWired) return; // already wired — don't re-attach listeners
+  doc.__rbWired=true;
   doc.addEventListener("click",(e)=>{
     const el=e.target.closest("[data-rb-id]"); if(!el) return;
     const t=(el.tagName||"").toLowerCase(),field=t==="input"||t==="textarea"||t==="select"||el.isContentEditable;
     if(!field) e.preventDefault();
-    sendCommand({type:"click",rbId:el.getAttribute("data-rb-id")});
+    sendCommandDeduped({type:"click",rbId:el.getAttribute("data-rb-id")});
   },true);
   doc.addEventListener("input",(e)=>{
     const ce=ceHost(e.target);
@@ -258,11 +295,13 @@ function wire(frame){
 function captureFocus(frame){ try{ const d=frame.contentDocument,a=d&&d.activeElement; if(a&&a.getAttribute&&a.getAttribute("data-rb-id")) return {id:a.getAttribute("data-rb-id"),s:a.selectionStart,e:a.selectionEnd}; }catch{} return null; }
 function restoreFocus(frame,f){ if(!f) return; try{ const el=frame.contentDocument.querySelector(`[data-rb-id="${f.id}"]`); if(el){ el.focus(); if(f.s!=null&&el.setSelectionRange){ try{el.setSelectionRange(f.s,f.e);}catch{} } } }catch{} }
 
-function render(snap){
+async function render(snap){
   if(!snap||!snap.html) return;
-  if(snap.html===lastHtml) return;
+  // Decompress if A sent a compressed payload (snap.z===true)
+  const html = await maybeDecompress(snap);
+  if(html===lastHtml) return;
   if(isTyping){ pendingSnap=snap; return; }
-  lastHtml=snap.html; urlEl.textContent=snap.url||"";
+  lastHtml=html; urlEl.textContent=snap.url||"";
   const keep=desiredScroll,foc=captureFocus(front);
   back.onload=()=>{
     wire(back);
@@ -270,7 +309,7 @@ function render(snap){
     restoreFocus(back,foc);
     back.className="shown"; front.className="hidden"; [front,back]=[back,front];
   };
-  back.srcdoc=snap.html;
+  back.srcdoc=html;
 }
 
 function renderTabs(tabs){
@@ -291,7 +330,19 @@ subscribe(DOM_URL,(d)=>{ if(!d||!d.html||(d.ts&&d.ts<=lastDomTs)) return; lastDo
 let cachedTabs={};
 subscribe(TABS_URL,(d)=>{ cachedTabs=d||{}; renderTabs(cachedTabs); });
 subscribe(CTRL_URL,(d)=>{ if(d){ activeTabId=d.activeTabId; renderTabs(cachedTabs); } });
-subscribe(EVAL_URL,(d)=>{ if(d&&d.out!==undefined) out.textContent=String(d.out); });
+subscribe(EVAL_URL,(d)=>{
+  if(!d||d.out===undefined) return;
+  const text=String(d.out);
+  if(text.startsWith("__CLIP__\n")){
+    const content=text.slice(9);
+    const count=content.split("\n").filter(Boolean).length;
+    navigator.clipboard.writeText(content)
+      .then(()=>{ out.textContent=`📋 ${count} ID${count!==1?"s":""} copied to your clipboard!`; stateEl.textContent="📋 Clipboard synced"; })
+      .catch(()=>{ out.textContent="📋 Clipboard sync failed — manual copy:\n"+content; });
+  } else {
+    out.textContent=text;
+  }
+});
 subscribe(NOTE_URL,(d)=>{ if(d&&d.text&&d.ts>lastNoteTs){ lastNoteTs=d.ts; stateEl.textContent="⚠ "+d.text; out.textContent="// A: "+d.text; } });
 
 // ── URL OPEN ──
